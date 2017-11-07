@@ -197,6 +197,8 @@ hello(Hello = #client_hello{client_version = ClientVersion,
             ssl_connection:hello({common_client_hello, Type, ServerHelloExt, HashSign},
 				 State#state{connection_states  = ConnectionStates,
 					     negotiated_version = Version,
+                                             client_hello_version = ClientVersion,
+					     hashsign_algorithm = HashSign,
 					     session = Session,
 					     client_ecc = {EllipticCurves, EcPointFormats}}, ?MODULE);
         #alert{} = Alert ->
