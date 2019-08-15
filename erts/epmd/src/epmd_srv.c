@@ -198,6 +198,74 @@ static EPMD_INLINE void select_fd_set(EpmdVars* g, int fd)
     }
 }
 
+static int epmd_dbus_get_port(sd_bus_message *m, void *userdata, sd_bus_error *ret_error)
+{
+  EpmdVars *g = userdata;
+
+  return 0;
+}
+
+static int epmd_dbus_get_names(sd_bus_message *m, void *userdata, sd_bus_error *ret_error)
+{
+  EpmdVars *g = userdata;
+
+  return 0;
+}
+
+#ifdef HAVE_SYSTEMD_DAEMON
+static const sd_bus_vtable epmd_dbus_vtable[] = {
+  SD_BUS_VTABLE_START(0),
+  SD_BUS_METHOD("GetPort",  "s", "x",   epmd_dbus_get_port,  SD_BUS_VTABLE_UNPRIVILEGED),
+  SD_BUS_METHOD("GetNames", "",  "a:s", epmd_dbus_get_names, SD_BUS_VTABLE_UNPRIVILEGED),
+  SD_BUS_VTABLE_END
+};
+
+static int epmd_dbus_init(EpmdVars *g)
+{
+  int r;
+
+  r = sd_bus_default_system(&g->bus);
+  if (r < 0)
+    {
+      dbg_perror(g,"cannot connect to system bus: %s", strerror(-r));
+      return r;
+    }
+
+  r = sd_bus_add_object_vtable(g->bus, &g->slot, "/org/erlang/PortMapper", "org.erlang.PortMapper", epmd_dbus_vtable, g);
+  if (r < 0)
+    {
+      dbg_perror(g,"cannot add object: %s", strerror(-r));
+      return r;
+    }
+
+  r = sd_bus_request_name(g->bus, "org.erlang.PortMapper", 0);
+  if (r < 0)
+    {
+      dbg_perror(g,"cannot acquire service name: %s", strerror(-r));
+      return r;
+    }
+
+  return r;
+}
+
+static int epmd_dbus_process(EpmdVars *g)
+{
+  int r;
+
+  do {
+    r = sd_bus_process(g->bus, NULL);
+  } while (r > 0);
+
+  if (r < 0)
+    {
+      dbg_perror(g,"failed to process bus: %s\n", strerror(-r));
+      return r;
+    }
+
+  return r;
+}
+#endif /* HAVE_SYSTEMD_DAEMON */
+
 void run(EpmdVars *g)
 {
   struct EPMD_SOCKADDR_IN iserv_addr[MAX_LISTEN_SOCKETS];
@@ -215,6 +283,14 @@ void run(EpmdVars *g)
   if (g->is_systemd)
     {
       int n;
+
+      dbg_printf(g,2,"connecting to system bus");
+
+      if (epmd_dbus_init(g) < 0)
+        {
+          dbg_perror(g,"cannot connect to system bus");
+          epmd_cleanup_exit(g,1);
+        }
       
       dbg_printf(g,2,"try to obtain sockets from systemd");
 
@@ -348,8 +424,11 @@ void run(EpmdVars *g)
 
 #ifdef HAVE_SYSTEMD_DAEMON
   if (g->is_systemd)
+    {
+      select_fd_set(g, sd_bus_get_fd(g->bus));
       for (i = 0; i < num_sockets; i++)
           select_fd_set(g, listensock[i]);
+    }
   else
     {
 #endif /* HAVE_SYSTEMD_DAEMON */
@@ -489,6 +568,14 @@ void run(EpmdVars *g)
 	if (g->delay_accept) {		/* Test of busy server */
 	  sleep(g->delay_accept);
 	}
+
+#ifdef HAVE_SYSTEMD_DAEMON
+	if (FD_ISSET(sd_bus_get_fd(g->bus), &read_mask)) {
+	  if (epmd_dbus_process(g) < 0) {
+	    epmd_cleanup_exit(g,1);
+	  }
+	}
+#endif /* HAVE_SYSTEMD_DAEMON */
 
 	for (i = 0; i < num_sockets; i++)
 	  if (FD_ISSET(g->listenfd[i],&read_mask)) {

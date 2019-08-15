@@ -112,6 +112,7 @@
 #include <stdarg.h>
 
 #ifdef HAVE_SYSTEMD_DAEMON
+#  include <systemd/sd-bus.h>
 #  include <systemd/sd-daemon.h>
 #endif /* HAVE_SYSTEMD_DAEMON */
 
@@ -350,6 +351,8 @@ typedef struct {
   char **argv;
 #ifdef HAVE_SYSTEMD_DAEMON
   int is_systemd;
+  sd_bus *bus;
+  sd_bus_slot *slot;
 #endif /* HAVE_SYSTEMD_DAEMON */
 } EpmdVars;
 

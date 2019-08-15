@@ -178,6 +178,8 @@ int main(int argc, char** argv)
     g->active_conn    = 0;
 #ifdef HAVE_SYSTEMD_DAEMON
     g->is_systemd     = 0;
+    g->bus            = NULL;
+    g->slot           = NULL;
 #endif /* HAVE_SYSTEMD_DAEMON */
 
     for (i = 0; i < MAX_LISTEN_SOCKETS; i++)
@@ -572,6 +574,19 @@ static void free_all_nodes(EpmdVars *g)
 	free(tmp);
     }
 }
+
+#ifdef HAVE_SYSTEMD_DAEMON
+static void epmd_dbus_free(EpmdVars *g)
+{
+  if (g->slot){
+    sd_bus_slot_unref(g->slot);
+  }
+  if (g->bus){
+    sd_bus_unref(g->bus);
+  }
+}
+#endif /* HAVE_SYSTEMD_DAEMON */
+
 void epmd_cleanup_exit(EpmdVars *g, int exitval)
 {
   int i;
@@ -593,6 +608,8 @@ void epmd_cleanup_exit(EpmdVars *g, int exitval)
   }
 #ifdef HAVE_SYSTEMD_DAEMON
   if (g->is_systemd){
+    epmd_dbus_free(g);
+
     sd_notifyf(0, "STATUS=Exited.\n"
                "ERRNO=%i", exitval);
   }
@@ -614,4 +631,3 @@ static int check_relaxed(void)
     char* port_str = getenv("ERL_EPMD_RELAXED_COMMAND_CHECK");
     return (port_str != NULL) ? 1 : 0;
 }
-
